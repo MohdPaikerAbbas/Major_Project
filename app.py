@@ -1,3 +1,11 @@
+from imutils.video import VideoStream
+from flask import Response
+import threading
+import argparse
+import imutils
+import time
+import cv2
+
 from flask import Flask, render_template, request, redirect, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
@@ -46,9 +54,52 @@ def destroy_login_session():
         session.clear()
 
 
+outputFrame = None
+lock = threading.Lock()
+vs = VideoStream(src=0).start()
+time.sleep(2.0)
+
+
+def detect_faces(frameCount):
+    global vs, outputFrame, lock
+    total = 0
+    while True:
+        frame = vs.read()
+        frame = imutils.resize(frame, width=400)
+        timestamp = datetime.now()
+        cv2.putText(frame, timestamp.strftime("%A %d %B %Y %I:%M:%S%p"), (10, frame.shape[0] - 10),
+            cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 255), 1)
+        total += 1
+        with lock:
+            outputFrame = frame.copy()
+
+def generate():
+    global outputFrame, lock
+    while True:
+        with lock:
+            if outputFrame is None:
+                continue
+            (flag, encodedImage) = cv2.imencode(".jpg", outputFrame)
+            if not flag:
+                continue
+        yield(b'--frame\r\n' b'Content-Type: image/jpeg\r\n\r\n' +  bytearray(encodedImage) + b'\r\n')
+
 @app.route('/')
 def index():
     return render_template('index.html')
+
+@app.route("/video_feed")
+def video_feed():
+    # return the response generated along with the specific media
+    # type (mime type)
+    return Response(generate(),mimetype = "multipart/x-mixed-replace; boundary=frame")
+
+@app.route('/video')
+def video_output():
+    print(session.get('username','not available'))
+    if not session.get('is_logged_in', False):
+        return redirect('/login')
+    return render_template('video.html')
 
 # froute
 @app.route('/login',  methods=['GET','POST'])
@@ -114,4 +165,13 @@ def logout():
     return redirect('/')    
 
 if __name__ == '__main__':
-    app.run(host='127.0.0.1', port=8000, debug=True)
+    ap = argparse.ArgumentParser()
+    # start a thread that will perform motion detection
+    t = threading.Thread(target=detect_faces, args=(32,))
+    t.daemon = True
+    t.start()
+    # start the flask app
+    app.run(host='127.0.0.1', port=5000, debug=True, threaded=True, use_reloader=False)
+# release the video stream pointer
+vs.stop()
+# python app.py
