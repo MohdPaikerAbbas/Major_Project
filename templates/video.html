@@ -1,0 +1,17 @@
+{% extends 'layout/base.html' %}
+{% block body %}
+<div class="container-fluid bg-dark">
+    <div class="row justify-content-center align-items-center">
+        <div class="col-lg-6 py-5">
+            <div class="card border-danger">
+              <img class="card-img-top" src="{{ url_for('video_feed') }}" alt="Title">
+              <div class="card-body">
+                <h4 class="card-title">Camera now Live</h4>
+                <p class="card-text">using pc camera</p>
+              </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
