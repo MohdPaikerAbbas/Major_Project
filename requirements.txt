@@ -1,0 +1,7 @@
+keras==2.9.0
+scipy
+numpy
+flask
+flask-sqlalchemy
+opencv-contrib-python
+tensorflow==2.10.0

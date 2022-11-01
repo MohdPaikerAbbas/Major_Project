@@ -3,12 +3,24 @@ from flask import Response
 import threading
 import argparse
 import imutils
+import numpy as np
 import time
 import cv2
 
 from flask import Flask, render_template, request, redirect, flash, session
 from flask_sqlalchemy import SQLAlchemy
 from datetime import datetime
+from scipy.spatial import distance
+import mediapipe as mp
+mp_face_detection = mp.solutions.face_detection
+mp_drawing = mp.solutions.drawing_utils
+
+# mediapipe face detection
+def detect_face(frame, face_detection):
+    frame = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+    results = face_detection.process(frame)
+    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
+    return results, frame
 
 db = SQLAlchemy()
 
@@ -53,25 +65,46 @@ def destroy_login_session():
     if 'is_logged_in' in session:
         session.clear()
 
+def load_keras_model():
+    print("LOG:", "Loading Keras model...")
+    from keras.models import load_model
+    path = 'models/masknet.h5'
+    model = load_model(path)
+    return model
+
+
+# main part of the app
 
 outputFrame = None
 lock = threading.Lock()
 vs = VideoStream(src=0).start()
 time.sleep(2.0)
 
+mask_label = {0:'MASK',1:'NO MASK'}
+dist_label = {0:(0,255,0), 1:(255,0,0)}
+MIN_DISTANCE = 130
+model = load_keras_model()
+
+
+
+# routes
 
 def detect_faces(frameCount):
     global vs, outputFrame, lock
     total = 0
-    while True:
-        frame = vs.read()
-        frame = imutils.resize(frame, width=400)
-        timestamp = datetime.now()
-        cv2.putText(frame, timestamp.strftime("%A %d %B %Y %I:%M:%S%p"), (10, frame.shape[0] - 10),
-            cv2.FONT_HERSHEY_SIMPLEX, 0.35, (0, 0, 255), 1)
-        total += 1
-        with lock:
-            outputFrame = frame.copy()
+    with mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5) as face_detection:
+        while True:
+            frame = vs.read()
+            font = cv2.FONT_HERSHEY_SIMPLEX
+            timestamp = datetime.now()
+            results, img  = detect_face(frame, face_detection)
+            if results.detections:
+                pass
+
+            cv2.putText(img, timestamp.strftime("%A %d %B %Y %I:%M:%S%p"), (10, img.shape[0] - 10), font, 0.5, (255, 255, 255), 1)
+            total += 1
+            with lock:
+                outputFrame = img.copy()
 
 def generate():
     global outputFrame, lock
