@@ -84,27 +84,71 @@ mask_label = {0:'MASK',1:'NO MASK'}
 dist_label = {0:(0,255,0), 1:(255,0,0)}
 MIN_DISTANCE = 130
 model = load_keras_model()
+mask_image_size = (128, 128)
+font = cv2.FONT_HERSHEY_SIMPLEX
 
 
 
-# routes
+# detect mask and distance between faces
+def detect_mask(image, detection):
+    global model, mask_label, dist_label, MIN_DISTANCE
+    image.flags.writeable = True
+    bbox = detection.location_data.relative_bounding_box
+    h, w, c = image.shape
+    bbox = int(bbox.xmin * w), int(bbox.ymin * h), int(bbox.width * w), int(bbox.height * h)
+    try:
+        face = image[bbox[1]:bbox[1]+bbox[3], bbox[0]:bbox[0]+bbox[2]]
+        face = cv2.resize(face, mask_image_size)
+        face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
+        face = np.reshape(face, (1, 128, 128, 3))
+        face = face / 255.0
+        pred = model.predict(face)
+        mask = mask_label[np.argmax(pred)]
+        color = dist_label[np.argmax(pred)]
+        cv2.rectangle(image, (bbox[0], bbox[1]), (bbox[0]+bbox[2], bbox[1]+bbox[3]), color, 2)
+        cv2.putText(image, mask, (bbox[0], bbox[1]-10), font, 0.5, color, 2)
+        
+        
+    except:
+        pass
+    return image
 
 def detect_faces(frameCount):
     global vs, outputFrame, lock
     total = 0
     with mp_face_detection.FaceDetection(model_selection=0, min_detection_confidence=0.5) as face_detection:
         while True:
-            frame = vs.read()
-            font = cv2.FONT_HERSHEY_SIMPLEX
+            image = vs.read()
             timestamp = datetime.now()
-            results, img  = detect_face(frame, face_detection)
+            image.flags.writeable = False
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            results = face_detection.process(image)
             if results.detections:
-                pass
+                boxes = []
+                for detection in results.detections:
+                    image = detect_mask(image, detection)
+                    # detect distance between faces
+                    bbox = detection.location_data.relative_bounding_box
+                    h, w, c = image.shape
+                    bbox = int(bbox.xmin * w), int(bbox.ymin * h), int(bbox.width * w), int(bbox.height * h)
+                    boxes.append(bbox)
+                for i in range(len(boxes)):
+                    for j in range(i+1, len(boxes)):
+                        d = distance.euclidean(boxes[i], boxes[j])
 
-            cv2.putText(img, timestamp.strftime("%A %d %B %Y %I:%M:%S%p"), (10, img.shape[0] - 10), font, 0.5, (255, 255, 255), 1)
+                        if d < MIN_DISTANCE:
+                            cv2.rectangle(image, (boxes[i][0], boxes[i][1]), (boxes[i][0]+boxes[i][2], boxes[i][1]+boxes[i][3]), (0,0,255), 2)
+                            cv2.rectangle(image, (boxes[j][0], boxes[j][1]), (boxes[j][0]+boxes[j][2], boxes[j][1]+boxes[j][3]), (0,0,255), 2)
+                            cv2.putText(image, "WARNING", (boxes[i][0], boxes[i][1]-10), font, 0.5, (0,0,255), 2)
+                            cv2.putText(image, "WARNING", (boxes[j][0], boxes[j][1]-10), font, 0.5, (0,0,255), 2)
+                        else:
+                            cv2.putText(image, "SAFE", (boxes[i][0], boxes[i][1]-10), font, 0.5, (0,255,0), 2)
+                
+            image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
+            cv2.putText(image, timestamp.strftime("%A %d %B %Y %I:%M:%S%p"), (10, image.shape[0] - 10), font, 0.5, (255, 255, 255), 1)
             total += 1
             with lock:
-                outputFrame = img.copy()
+                outputFrame = image.copy()
 
 def generate():
     global outputFrame, lock
