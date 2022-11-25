@@ -68,7 +68,7 @@ def destroy_login_session():
 def load_keras_model():
     print("LOG:", "Loading Keras model...")
     from keras.models import load_model
-    path = 'models/masknet.h5'
+    path = 'models/face_mask.h5'
     model = load_model(path)
     return model
 
@@ -80,11 +80,11 @@ lock = threading.Lock()
 vs = VideoStream(src=0).start()
 time.sleep(2.0)
 
-mask_label = {0:'MASK',1:'NO MASK'}
+mask_label = {0:'NO MASK',1:'MASK'}
 dist_label = {0:(0,255,0), 1:(255,0,0)}
 MIN_DISTANCE = 130
 model = load_keras_model()
-mask_image_size = (128, 128)
+mask_image_size = (150, 150)
 font = cv2.FONT_HERSHEY_SIMPLEX
 
 
@@ -99,18 +99,24 @@ def detect_mask(image, detection):
     try:
         face = image[bbox[1]:bbox[1]+bbox[3], bbox[0]:bbox[0]+bbox[2]]
         face = cv2.resize(face, mask_image_size)
-        face = cv2.cvtColor(face, cv2.COLOR_BGR2RGB)
-        face = np.reshape(face, (1, 128, 128, 3))
-        face = face / 255.0
+        face = cv2.cvtColor(face, cv2.COLOR_BGR2GRAY)
+        face = np.reshape(face, (1, 150, 150, 1))
+        # face = face / 255.0
+        print(face)
         pred = model.predict(face)
-        mask = mask_label[np.argmax(pred)]
+        print("pred", pred)
+        if pred[0][0] == 0:
+            out = 1
+        else:
+            out = 0
+        mask = mask_label[out]
         color = dist_label[np.argmax(pred)]
         cv2.rectangle(image, (bbox[0], bbox[1]), (bbox[0]+bbox[2], bbox[1]+bbox[3]), color, 2)
         cv2.putText(image, mask, (bbox[0], bbox[1]-10), font, 0.5, color, 2)
         
         
-    except:
-        pass
+    except Exception as e:
+        print("error", e)
     return image
 
 def detect_faces(frameCount):
@@ -132,6 +138,7 @@ def detect_faces(frameCount):
                     h, w, c = image.shape
                     bbox = int(bbox.xmin * w), int(bbox.ymin * h), int(bbox.width * w), int(bbox.height * h)
                     boxes.append(bbox)
+                print("boxes", boxes)
                 for i in range(len(boxes)):
                     for j in range(i+1, len(boxes)):
                         d = distance.euclidean(boxes[i], boxes[j])
@@ -142,8 +149,9 @@ def detect_faces(frameCount):
                             cv2.putText(image, "WARNING", (boxes[i][0], boxes[i][1]-10), font, 0.5, (0,0,255), 2)
                             cv2.putText(image, "WARNING", (boxes[j][0], boxes[j][1]-10), font, 0.5, (0,0,255), 2)
                         else:
-                            cv2.putText(image, "SAFE", (boxes[i][0], boxes[i][1]-10), font, 0.5, (0,255,0), 2)
-                
+                            cv2.putText(image, "SAFE", (boxes[i][0]+boxes[i][2], boxes[i][1]+boxes[i][3]+10), font, 0.5, (0,255,0), 2)
+            else:
+                print("no detection")
             image = cv2.cvtColor(image, cv2.COLOR_RGB2BGR)
             cv2.putText(image, timestamp.strftime("%A %d %B %Y %I:%M:%S%p"), (10, image.shape[0] - 10), font, 0.5, (255, 255, 255), 1)
             total += 1
